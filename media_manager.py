@@ -6,6 +6,35 @@ import tempfile
 import mimetypes
 
 class MediaManager:
+    """Media Manager Class for handling various media files.
+    This class provides functionality to manage different types of media files (PDF, MP4, MP3)
+    through a SQLite database. It allows for basic CRUD operations and file handling.
+    Attributes:
+        db_name (str): Name of the SQLite database file.
+    Methods:
+        setup_database(): 
+            Initializes the SQLite database with required table structure.
+        get_media_data(title: str) -> bytes:
+            Retrieves binary data of a media file from database.
+        add_media(media_type: str, title: str) -> str:
+            Adds a new media file to the database.
+            Supports PDF, MP4, and MP3 formats.
+        open_media(title: str) -> str:
+            Opens a media file using the system's default application.
+        delete_media(title: str) -> str:
+            Removes a media file from the database.
+        rename_media(old_title: str, new_title: str) -> str:
+            Renames a media file in the database.
+        search_media(media_type: str, title: str) -> list:
+            Searches for media files based on type and title.
+            Returns a list of matching records.
+    Requirements:
+        - sqlite3
+        - tkinter (for filedialog)
+        - mimetypes
+        - tempfile
+        - os
+    """
     def __init__(self):
         self.db_name = 'media_manager.db'
         self.setup_database()
@@ -95,6 +124,25 @@ class MediaManager:
                 return cursor.fetchall()
 
 class MediaManagerApp:
+    """
+    A GUI application for managing media files using Tkinter.
+    This class provides a graphical user interface for managing different types of media files
+    (PDF, MP4, MP3). It allows users to add, search, delete, rename, and open media files
+    through a user-friendly interface.
+    Attributes:
+        manager (MediaManager): Instance of MediaManager class handling media operations
+        root (tk.Tk): Main window of the application
+        status_label (tk.Label): Label for displaying status messages
+    Methods:
+        center_window(window): Centers a window on the screen
+        add_media_gui(): Opens a window for adding new media
+        manage_media_gui(): Opens a window for managing existing media
+    The GUI includes:
+    - Main window with options to add and manage media
+    - Add media window with fields for media type and title
+    - Manage media window with search, view, delete, and rename capabilities
+    - Status messages for operation feedback
+    """
     def __init__(self, root):
         self.manager = MediaManager()
         self.root = root
