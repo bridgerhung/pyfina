@@ -97,8 +97,13 @@ class MediaManager:
     def delete_media(self, title):
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
+            # First set BLOB data to NULL to ensure it's cleared from the database
+            cursor.execute('UPDATE media SET data = NULL WHERE title = ?', (title,))
+            # Then delete the record
             cursor.execute('DELETE FROM media WHERE title = ?', (title,))
             conn.commit()
+            # VACUUM to reclaim storage space
+            cursor.execute('VACUUM')
             return f'Media "{title}" deleted.'
 
     def rename_media(self, old_title, new_title):
