@@ -109,6 +109,15 @@ class MediaManager:
     def rename_media(self, old_title, new_title):
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
+            # Check if old title exists
+            cursor.execute('SELECT COUNT(*) FROM media WHERE title = ?', (old_title,))
+            if cursor.fetchone()[0] == 0:
+                return f'Media "{old_title}" not found.'
+            # Check if new title already exists
+            cursor.execute('SELECT COUNT(*) FROM media WHERE title = ?', (new_title,))
+            if cursor.fetchone()[0] > 0:
+                return f'Title "{new_title}" already exists.'
+            # Perform the rename
             cursor.execute('UPDATE media SET title = ? WHERE title = ?', (new_title, old_title))
             conn.commit()
             return f'Media "{old_title}" renamed to "{new_title}".'
@@ -259,6 +268,8 @@ class MediaManagerApp:
                 if new_title:
                     result = self.manager.rename_media(old_title, new_title)
                     self.status_label.config(text=result)
+                    search_media_action()  # Refresh the display after renaming
+                    
 
         button_frame = tk.Frame(manage_window)
         button_frame.pack(pady=10)
