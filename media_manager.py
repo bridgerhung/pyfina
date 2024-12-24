@@ -1,8 +1,9 @@
 import os
 import sqlite3
-import subprocess
 import tkinter as tk
-from tkinter import messagebox, Listbox, Scrollbar, ttk, filedialog, simpledialog
+from tkinter import Scrollbar, ttk, filedialog, simpledialog
+import tempfile
+import mimetypes
 
 class MediaManager:
     def __init__(self):
@@ -17,10 +18,17 @@ class MediaManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT,
                     title TEXT,
-                    filepath TEXT
+                    data BLOB
                 )
             ''')
             conn.commit()
+
+    def get_media_data(self, title):
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT data FROM media WHERE title = ?', (title,))
+            row = cursor.fetchone()
+            return row[0] if row else None
 
     def add_media(self, media_type, title):
         filetypes = {
@@ -28,63 +36,63 @@ class MediaManager:
             "mp4": [("MP4 files", "*.mp4")],
             "mp3": [("MP3 files", "*.mp3")]
         }
-        filepath = filedialog.askopenfilename(filetypes=filetypes.get(media_type, [("All files", "*.*")]))
-        if filepath and os.path.exists(filepath):
+        file_path = filedialog.askopenfilename(filetypes=filetypes[media_type])
+        if file_path:
+            with open(file_path, 'rb') as file:
+                file_data = file.read()
             with sqlite3.connect(self.db_name) as conn:
                 cursor = conn.cursor()
-                cursor.execute('INSERT INTO media (type, title, filepath) VALUES (?, ?, ?)', (media_type, title, filepath))
-                conn.commit()
-                return f'{media_type.capitalize()} "{title}" added successfully.'
+                cursor.execute('''
+                    INSERT INTO media (type, title, data) VALUES (?, ?, ?)
+                ''', (media_type, title, file_data))
+            return f'Media "{title}" added successfully.'
         else:
             return 'File not found or no file selected!'
+
+    def open_media(self, title):
+        media_data = self.get_media_data(title)
+        if media_data:
+            mime_type, _ = mimetypes.guess_type(title)
+            extension = mimetypes.guess_extension(mime_type) if mime_type else ''
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp_file:
+                tmp_file.write(media_data)
+                temp_path = tmp_file.name
+            try:
+                os.startfile(temp_path)
+                return f'Opening "{title}"...'
+            except Exception as e:
+                return f'Could not open media: {e}'
+        else:
+            return 'Media not found.'
 
     def delete_media(self, title):
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM media WHERE title = ?', (title,))
             conn.commit()
-            return f'Media "{title}" 已刪除.'
+            return f'Media "{title}" deleted.'
 
     def rename_media(self, old_title, new_title):
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE media SET title = ? WHERE title = ?', (new_title, old_title))
             conn.commit()
-            return f' "{old_title}" 已重命名為 "{new_title}" .'
+            return f'Media "{old_title}" renamed to "{new_title}".'
 
-    def search_media(self, media_type=None, title=None):
-        with sqlite3.connect(self.db_name) as conn:
-            cursor = conn.cursor()
-            if media_type and title:
-                cursor.execute('SELECT title, filepath, type FROM media WHERE type = ? AND title LIKE ?', (media_type, f'%{title}%'))
-            elif media_type:
-                cursor.execute('SELECT title, filepath, type FROM media WHERE type = ?', (media_type,))
-            elif title:
-                cursor.execute('SELECT title, filepath, type FROM media WHERE title LIKE ?', (f'%{title}%',))
-            else:
-                cursor.execute('SELECT title, filepath, type FROM media')
-            return cursor.fetchall()
-
-    def get_media_path(self, title):
-        with sqlite3.connect(self.db_name) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT filepath FROM media WHERE title = ?', (title,))
-            row = cursor.fetchone()
-            if row:
-                return row[0]
-            else:
-                return None
-
-    def open_media(self, title):
-        media_path = self.get_media_path(title)
-        if media_path:
-            try:
-                os.startfile(media_path)
-                return f'Opening "{title}"...'
-            except Exception as e:
-                return f'Could not open media: {e}'
-        else:
-            return 'Media not found!'
+    
+    def search_media(self, media_type, title):
+            query = 'SELECT title, type FROM media WHERE 1=1'
+            params = []
+            if media_type:
+                query += ' AND type = ?'
+                params.append(media_type)
+            if title:
+                query += ' AND title LIKE ?'
+                params.append('%' + title + '%')
+            with sqlite3.connect(self.db_name) as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                return cursor.fetchall()
 
 class MediaManagerApp:
     def __init__(self, root):
@@ -94,13 +102,10 @@ class MediaManagerApp:
         self.root.geometry("800x600")
         self.center_window(self.root)
 
-        # 設定字體和按鈕大小
         font_large = ("Helvetica", 16)
         button_options = {"font": font_large, "padx": 10, "pady": 10}
 
-        # 顯示標題和按鈕
         tk.Label(root, text="媒體管理器", font=("Helvetica", 24)).pack(pady=20)
-        
         self.status_label = tk.Label(root, text="", font=("Helvetica", 12))
         self.status_label.pack(pady=10)
 
@@ -116,7 +121,6 @@ class MediaManagerApp:
         window.geometry(f'{width}x{height}+{x}+{y}')
 
     def add_media_gui(self):
-        # 新增多媒體的GUI窗口
         add_window = tk.Toplevel(self.root)
         add_window.title("新增媒體")
         add_window.geometry("500x350")
@@ -137,7 +141,7 @@ class MediaManagerApp:
             title = title_entry.get()
             result = self.manager.add_media(media_type, title)
             self.status_label.config(text=result)
-            add_window.destroy()  # 關閉新增媒體的子視窗
+            add_window.destroy()
 
         tk.Button(add_window, text="新增", command=add_media_action, font=font_large).pack(pady=20)
         tk.Button(add_window, text="返回上一頁", command=add_window.destroy, font=font_large).pack(pady=10)
@@ -161,21 +165,15 @@ class MediaManagerApp:
         title_entry.pack(side="left", padx=5)
         tk.Button(title_frame, text="搜尋", command=lambda: search_media_action(), font=font_large).pack(side="left", padx=5)
 
-        columns = ("title", "filename", "type", "filepath")
+        columns = ("title", "type")
         tree = ttk.Treeview(manage_window, columns=columns, show="headings", height=13)
         tree.heading("title", text="標題")
-        tree.heading("filename", text="檔案名稱")
         tree.heading("type", text="檔案類型")
-        tree.heading("filepath", text="檔案路徑")
         tree.pack(pady=10, fill="both", expand=True)
-
+        
         scrollbar_y = Scrollbar(manage_window, orient="vertical", command=tree.yview)
         scrollbar_y.pack(side="right", fill="y")
         tree.configure(yscrollcommand=scrollbar_y.set)
-
-        scrollbar_x = Scrollbar(manage_window, orient="horizontal", command=tree.xview)
-        scrollbar_x.pack(side="bottom", fill="x")
-        tree.configure(xscrollcommand=scrollbar_x.set)
 
         def search_media_action():
             media_type = media_type_combobox.get()
@@ -183,17 +181,15 @@ class MediaManagerApp:
             results = self.manager.search_media(media_type, title)
             tree.delete(*tree.get_children())
             for result in results:
-                title, filepath, media_type = result
-                filename = os.path.basename(filepath)
-                tree.insert("", "end", values=(title, filename, media_type, filepath))
+                title, media_type = result[:2]
+                tree.insert("", "end", values=(title, media_type))
 
         def delete_media_action():
             selected_item = tree.selection()
             if selected_item:
                 title = tree.item(selected_item, "values")[0]
-                result = self.manager.delete_media(title)
-                self.status_label.config(text=result)
-                search_media_action()
+                self.manager.delete_media(title)
+                tree.delete(selected_item)
 
         def open_media_action():
             selected_item = tree.selection()
@@ -209,7 +205,7 @@ class MediaManagerApp:
                 new_title = simpledialog.askstring("重新命名標題", "輸入新的標題:")
                 if new_title:
                     result = self.manager.rename_media(old_title, new_title)
-                    search_media_action()
+                    self.status_label.config(text=result)
 
         button_frame = tk.Frame(manage_window)
         button_frame.pack(pady=10)
@@ -219,7 +215,9 @@ class MediaManagerApp:
         tk.Button(button_frame, text="重新命名標題", command=rename_media_action, font=font_large).pack(side="left", padx=5)
         tk.Button(button_frame, text="返回上一頁", command=manage_window.destroy, font=font_large).pack(side="left", padx=5)
 
-        # 預設列出所有檔案
+        
+
+        # Perform initial search to populate the treeview
         search_media_action()
 
 if __name__ == "__main__":
