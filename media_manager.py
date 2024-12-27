@@ -6,35 +6,7 @@ import tempfile
 import mimetypes
 
 class MediaManager:
-    """Media Manager Class for handling various media files.
-    This class provides functionality to manage different types of media files (PDF, MP4, MP3)
-    through a SQLite database. It allows for basic CRUD operations and file handling.
-    Attributes:
-        db_name (str): Name of the SQLite database file.
-    Methods:
-        setup_database(): 
-            Initializes the SQLite database with required table structure.
-        get_media_data(title: str) -> bytes:
-            Retrieves binary data of a media file from database.
-        add_media(media_type: str, title: str) -> str:
-            Adds a new media file to the database.
-            Supports PDF, MP4, and MP3 formats.
-        open_media(title: str) -> str:
-            Opens a media file using the system's default application.
-        delete_media(title: str) -> str:
-            Removes a media file from the database.
-        rename_media(old_title: str, new_title: str) -> str:
-            Renames a media file in the database.
-        search_media(media_type: str, title: str) -> list:
-            Searches for media files based on type and title.
-            Returns a list of matching records.
-    Requirements:
-        - sqlite3
-        - tkinter (for filedialog)
-        - mimetypes
-        - tempfile
-        - os
-    """
+    
     def __init__(self):
         self.db_name = 'media_manager.db'
         self.setup_database()
@@ -48,6 +20,13 @@ class MediaManager:
                     type TEXT,
                     title TEXT,
                     data BLOB
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL
                 )
             ''')
             conn.commit()
@@ -137,26 +116,24 @@ class MediaManager:
                 cursor.execute(query, params)
                 return cursor.fetchall()
 
+    def register_user(self, username, password):
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+                conn.commit()
+                return "User registered successfully."
+            except sqlite3.IntegrityError:
+                return "Username already exists."
+
+    def login_user(self, username, password):
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM users WHERE username = ? AND password = ?', (username, password))
+            return "Login successful." if cursor.fetchone()[0] == 1 else "Invalid username or password."
+
 class MediaManagerApp:
-    """
-    A GUI application for managing media files using Tkinter.
-    This class provides a graphical user interface for managing different types of media files
-    (PDF, MP4, MP3). It allows users to add, search, delete, rename, and open media files
-    through a user-friendly interface.
-    Attributes:
-        manager (MediaManager): Instance of MediaManager class handling media operations
-        root (tk.Tk): Main window of the application
-        status_label (tk.Label): Label for displaying status messages
-    Methods:
-        center_window(window): Centers a window on the screen
-        add_media_gui(): Opens a window for adding new media
-        manage_media_gui(): Opens a window for managing existing media
-    The GUI includes:
-    - Main window with options to add and manage media
-    - Add media window with fields for media type and title
-    - Manage media window with search, view, delete, and rename capabilities
-    - Status messages for operation feedback
-    """
+    
     def __init__(self, root):
         self.manager = MediaManager()
         self.root = root
@@ -284,7 +261,64 @@ class MediaManagerApp:
         # Perform initial search to populate the treeview
         search_media_action()
 
+class AuthWindow:
+    def __init__(self, root, manager):
+        self.root = root
+        self.manager = manager
+        self.root.title("使用者驗證")
+        self.root.geometry("400x250")
+
+        self.center_window()  # Center the window
+
+        font_large = ("Helvetica", 14)
+        tk.Label(root, text="使用者名稱:", font=font_large).pack(pady=5)
+        self.username_entry = tk.Entry(root, font=font_large)
+        self.username_entry.pack()
+
+        tk.Label(root, text="密碼:", font=font_large).pack(pady=5)
+        self.password_entry = tk.Entry(root, show="*", font=font_large)
+        self.password_entry.pack()
+
+        self.status_label = tk.Label(root, text="", font=font_large)
+        self.status_label.pack(pady=5)
+
+        button_frame = tk.Frame(root)
+        button_frame.pack(pady=10)
+
+        tk.Button(button_frame, text="登入", command=self.login, font=font_large).pack(side="left", padx=5)
+        tk.Button(button_frame, text="註冊", command=self.register, font=font_large).pack(side="left", padx=5)
+
+    def center_window(self):
+        self.root.update_idletasks()
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+
+    def login(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+        result = self.manager.login_user(username, password)
+        self.status_label.config(text=result)
+        if "successful" in result:
+            self.open_main_app()
+
+    def register(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+        result = self.manager.register_user(username, password)
+        self.status_label.config(text=result)
+
+    def open_main_app(self):
+        self.root.destroy()
+        new_root = tk.Tk()
+        app = MediaManagerApp(new_root)
+        new_root.mainloop()
+
 if __name__ == "__main__":
     root = tk.Tk()
-    app = MediaManagerApp(root)
+    manager = MediaManager()
+    AuthWindow(root, manager)
     root.mainloop()
+
